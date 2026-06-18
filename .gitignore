@@ -1,0 +1,13 @@
+# compiled binaries
+*.exe
+*.out
+bin/
+
+# go test/coverage
+*.test
+coverage.out
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
