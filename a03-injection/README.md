@@ -29,6 +29,17 @@ SECURE=1 go run .   # ✅ SECURE — parameterized query (WHERE name = ?)
 db.Query("SELECT ... WHERE name = ?", name)   // ✅ input แยกจาก SQL
 ```
 
+นอกจากนี้ เมื่อ query error จะ **ไม่คืน `err.Error()` ดิบ** กลับให้ client (กัน leak schema/driver
+ที่ช่วย attacker craft SQLi ต่อ) แต่ log ฝั่ง server แล้วตอบกลางๆ `{"error":"internal server error"}`
+(แนวเดียวกับ A05 secure path):
+
+```go
+if err != nil {
+    log.Printf("search query failed: %v", err)   // ฝั่ง server เท่านั้น
+    return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
+}
+```
+
 ## 💬 vibe coding
 
 > "endpoint /search นี้ต่อ string เข้า SQL ช่วยแก้เป็น parameterized query ทั้งหมด, เพิ่ม input validation, แล้วเขียน test ที่ยิง `' OR '1'='1` และ `'; DROP TABLE users;--` ยืนยันว่ากันได้"

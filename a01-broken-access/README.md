@@ -5,6 +5,9 @@
 1. **IDOR** — ผู้ใช้ `alice` อ่าน order ของ `bob` ได้ เพราะ endpoint คืนข้อมูลตาม `:id` โดย **ไม่ตรวจเจ้าของ**
 2. **Missing RBAC** — `DELETE /admin/users/:id` **ลืมใส่ role check** → ใครก็ลบ user ได้ (privilege escalation) จนกว่าจะใส่ middleware `RequireRole("admin")`
 
+> **identity มาจากไหน?** โหมด VULNERABLE เชื่อ header `X-User-Id` / `X-Role` ที่ client ส่งมาตรงๆ → ปลอมได้ง่าย
+> โหมด SECURE ดึง identity/role จาก **session ที่ verify ฝั่ง server** (จำลองด้วย token `Authorization: tok-admin`) → ปลอม header ไม่มีผล (ของจริงใช้ JWT/session store)
+
 ## รัน
 
 ```bash
@@ -22,12 +25,28 @@ SECURE=1 go run .   # ✅ SECURE — ตรวจ owner ก่อนคืนข
 
 ## เห็นอะไร
 
-| โหมด | IDOR (`GET /orders/1002`) | RBAC (`DELETE /admin/users/42`) |
+| โหมด | IDOR (ปลอม `X-User-Id: alice`) | RBAC (ปลอม `X-Role: admin`) |
 |------|---------------------------|--------------------------------|
-| VULNERABLE | `HTTP 200` + ข้อมูล bob รั่ว | `HTTP 200` + `{"deleted":"42"}` ← non-admin ลบได้ |
-| SECURE | `HTTP 403` + `{"error":"forbidden"}` | `HTTP 403` + `{"error":"forbidden"}` |
+| VULNERABLE | `HTTP 200` + ข้อมูล bob รั่ว | `HTTP 200` + `{"deleted":"42"}` ← ปลอม header ก็ลบได้ |
+| SECURE | `HTTP 403` + `{"error":"forbidden"}` | `HTTP 403` + `{"error":"forbidden"}` ← header ปลอมไม่มีผล |
 
 ## จุดที่ต่างกัน (ดูใน `main.go`)
+
+**identity source — ไม่เชื่อ header ดิบ**
+
+```go
+if secure {
+    // ✅ identity/role มาจาก session ที่ verify ฝั่ง server เท่านั้น
+    if s, ok := sessions[c.Get("Authorization")]; ok {
+        c.Locals("user", s.user)
+        c.Locals("role", s.role)
+    }
+} else {
+    // ❌ vulnerable: เชื่อ header ที่ client ส่งมา → ปลอมได้
+    c.Locals("user", c.Get("X-User-Id"))
+    c.Locals("role", c.Get("X-Role"))
+}
+```
 
 **IDOR — owner check**
 

@@ -32,6 +32,17 @@ var users = map[string]string{
 	"43": "dave",
 }
 
+// session ที่ผ่านการ verify ฝั่ง server แล้ว: token → identity/role
+// ของจริงมาจาก JWT signature หรือ session store — ไม่ใช่ header ดิบจาก client
+var sessions = map[string]struct {
+	user string
+	role string
+}{
+	"tok-alice": {"alice", "user"},
+	"tok-bob":   {"bob", "user"},
+	"tok-admin": {"admin", "admin"},
+}
+
 // RequireRole — middleware กันตามสิทธิ์: อ่าน role จาก c.Locals("role")
 // (ปกติ auth layer ดึงมาจาก JWT/session แล้ว set ไว้) ถ้าไม่ตรงตอบ 403 forbidden
 func RequireRole(role string) fiber.Handler {
@@ -56,14 +67,25 @@ func main() {
 	secure := os.Getenv("SECURE") == "1"
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 
-	// จำลอง auth layer: ปกติ role มาจาก JWT/session — ที่นี่อ่านจาก header X-Role
+	// auth layer: ตั้ง identity/role ลง Locals ให้ handler/RBAC ใช้
 	app.Use(func(c *fiber.Ctx) error {
-		c.Locals("role", c.Get("X-Role"))
+		if secure {
+			// ✅ A01 fix: identity/role มาจาก session ที่ verify ฝั่ง server เท่านั้น
+			// ไม่อ่าน X-User-Id/X-Role ดิบ → ปลอม header ไม่มีผล
+			if s, ok := sessions[c.Get("Authorization")]; ok {
+				c.Locals("user", s.user)
+				c.Locals("role", s.role)
+			}
+		} else {
+			// ❌ VULNERABLE: เชื่อ header ที่ client ส่งมาตรงๆ → ปลอมได้ง่าย
+			c.Locals("user", c.Get("X-User-Id"))
+			c.Locals("role", c.Get("X-Role"))
+		}
 		return c.Next()
 	})
 
 	app.Get("/orders/:id", func(c *fiber.Ctx) error {
-		caller := c.Get("X-User-Id") // จำลองผู้ใช้ที่ล็อกอินอยู่
+		caller, _ := c.Locals("user").(string) // identity ที่ auth layer ตั้งไว้
 		o, ok := orders[c.Params("id")]
 		if !ok {
 			return c.Status(404).JSON(fiber.Map{"error": "not found"})

@@ -42,7 +42,9 @@ func main() {
 			rows, err = db.Query(q)
 		}
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			// ✅ ไม่คืน err.Error() ดิบ (leak schema/driver) — log ฝั่ง server, ตอบกลางๆ
+			log.Printf("search query failed: %v", err)
+			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
 		}
 		defer rows.Close()
 
