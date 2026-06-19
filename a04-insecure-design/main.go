@@ -32,6 +32,11 @@ func main() {
 			return c.Status(400).JSON(fiber.Map{"error": "bad request"})
 		}
 
+		// ✅ validate qty เสมอ: กัน qty<=0 (ของฟรี/ยอดติดลบ) — business-logic flaw
+		if o.Qty <= 0 {
+			return c.Status(400).JSON(fiber.Map{"error": "invalid qty"})
+		}
+
 		unit := o.Price // ❌ VULNERABLE: ใช้ราคาที่ client ส่งมา → ตั้ง 1 บาทก็ได้
 		if secure {
 			// ✅ ออกแบบให้ปลอดภัย: ราคามาจาก server เท่านั้น ไม่สนค่าที่ client ส่ง

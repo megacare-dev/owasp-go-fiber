@@ -18,15 +18,18 @@ import (
 
 var resetTokens = map[string]string{} // token -> user
 
-func makeToken(user string, secure bool) string {
+func makeToken(user string, secure bool) (string, error) {
 	if secure {
 		b := make([]byte, 32)
-		rand.Read(b) // ✅ crypto/rand: ไม่ผูกกับข้อมูลใด เดาไม่ได้
-		return hex.EncodeToString(b)
+		if _, err := rand.Read(b); err != nil {
+			// ✅ ถ้า entropy source พัง อย่าคืน token ที่อาจเป็น zero-bytes (เดาได้)
+			return "", err
+		}
+		return hex.EncodeToString(b), nil // ✅ crypto/rand: ไม่ผูกกับข้อมูลใด เดาไม่ได้
 	}
 	// ❌ VULNERABLE: token = md5(username) → ใครรู้ username ก็คำนวณ token ได้
 	h := md5.Sum([]byte(user))
-	return hex.EncodeToString(h[:])
+	return hex.EncodeToString(h[:]), nil
 }
 
 func main() {
@@ -36,7 +39,11 @@ func main() {
 	// ขอ reset token (ปกติส่งเข้าอีเมล — attacker ไม่เห็นค่านี้)
 	app.Post("/forgot", func(c *fiber.Ctx) error {
 		user := c.Query("user", "bob")
-		resetTokens[makeToken(user, secure)] = user
+		token, err := makeToken(user, secure)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "internal server error"})
+		}
+		resetTokens[token] = user
 		return c.JSON(fiber.Map{"sent": true, "user": user}) // ไม่คืน token
 	})
 
