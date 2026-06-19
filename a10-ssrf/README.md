@@ -11,8 +11,10 @@ go run .            # ❌ VULNERABLE — fetch ตรงๆ
 ./scan.sh           # 🔍 Scan หาช่องโหว่ (gosec/govulncheck)
 ./exploit.sh        # /fetch?url=http://127.0.0.1:9999/... → ได้ AWS_SECRET ภายใน
 
-SECURE=1 go run .   # ✅ SECURE — บล็อก loopback/private/link-local
+SECURE=1 go run .   # ✅ SECURE — บล็อก loopback/private/link-local + ปิด redirect + กัน DNS rebinding
 ./exploit.sh        # 400 blocked: internal address
+
+go test ./...       # ✅ test: 127.0.0.1 / 169.254.169.254 / private โดนบล็อก · public ผ่าน
 ```
 
 ## เห็นอะไร
@@ -26,7 +28,9 @@ SECURE=1 go run .   # ✅ SECURE — บล็อก loopback/private/link-local
 
 - ตรวจปลายทางก่อนยิง outbound: บล็อก **loopback / private / link-local (169.254.169.254)**
 - ใช้ allow-list domain ที่อนุญาต ดีกว่า block-list
-- ระวัง DNS rebinding (resolve แล้วค่อยเช็ค IP จริง) + redirect ตาม
+- ✅ โหมด SECURE กัน **DNS rebinding/TOCTOU** ด้วยการตรวจ IP จริงตอน dial (`DialContext`) ไม่ใช่แค่ตอนเช็ค
+- ✅ โหมด SECURE **ปิด redirect** (`http.ErrUseLastResponse`) กัน URL ที่อนุญาต 302 เด้งไปปลายทางภายใน
+- ✅ parse ด้วย `net/url` + อนุญาตเฉพาะ `http/https` (กัน trick แบบ `user@host` / scheme แปลกๆ)
 
 ```go
 if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() { /* block */ }

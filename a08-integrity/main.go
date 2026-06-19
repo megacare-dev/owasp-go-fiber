@@ -16,8 +16,38 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// secret ที่แชร์กับผู้ส่ง webhook (เช่น payment gateway)
-var webhookSecret = []byte("shared-webhook-secret")
+// secret อ่านจาก env (production) — มี default ไว้ให้ demo รันได้ทันที
+// ห้าม hardcode secret จริงในโค้ด: ใช้ env / secret manager เสมอ
+func secret() []byte {
+	if s := os.Getenv("WEBHOOK_SECRET"); s != "" {
+		return []byte(s)
+	}
+	return []byte("shared-webhook-secret")
+}
+
+// sign คืน HMAC-SHA256(body, secret) เป็น hex — ผู้ส่ง webhook ที่ถูกต้อง
+// (เช่น payment gateway) ต้องแนบค่านี้มาใน header X-Signature
+func sign(body []byte) string {
+	mac := hmac.New(sha256.New, secret())
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// verifySignature ✅ — ตรวจ integrity ของ payload ด้วย hmac.Equal (constant-time)
+// ลายเซ็นที่หายไป/ผิด/body ถูกแก้ จะไม่ผ่าน → กันทั้ง event ปลอมและ timing attack
+func verifySignature(body []byte, sig string) bool {
+	return hmac.Equal([]byte(sign(body)), []byte(sig))
+}
+
+// verifyWebhook เลือกพฤติกรรมตามโหมด:
+//   - secure       → เชื่อเฉพาะ payload ที่มีลายเซ็น HMAC ถูกต้องเท่านั้น
+//   - vulnerable ❌ → เชื่อ payload ทันที โดยไม่ตรวจว่ามาจากแหล่งที่เชื่อถือจริง
+func verifyWebhook(body []byte, sig string, secure bool) bool {
+	if secure {
+		return verifySignature(body, sig)
+	}
+	return true
+}
 
 func main() {
 	secure := os.Getenv("SECURE") == "1"
@@ -25,17 +55,9 @@ func main() {
 
 	app.Post("/webhook", func(c *fiber.Ctx) error {
 		body := c.Body()
-
-		if secure {
-			// ✅ ตรวจ integrity: ผู้ส่งต้องแนบ X-Signature = HMAC-SHA256(body, secret)
-			mac := hmac.New(sha256.New, webhookSecret)
-			mac.Write(body)
-			expect := hex.EncodeToString(mac.Sum(nil))
-			if !hmac.Equal([]byte(expect), []byte(c.Get("X-Signature"))) {
-				return c.Status(401).JSON(fiber.Map{"error": "invalid signature"})
-			}
+		if !verifyWebhook(body, c.Get("X-Signature"), secure) {
+			return c.Status(401).JSON(fiber.Map{"error": "invalid signature"})
 		}
-		// ❌ VULNERABLE: ประมวลผล payload โดยไม่ตรวจว่ามาจากแหล่งที่เชื่อถือจริง
 		return c.JSON(fiber.Map{"processed": true, "raw": string(body)})
 	})
 

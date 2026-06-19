@@ -11,6 +11,9 @@ go run .            # ❌ VULNERABLE — เชื่อ payload โดยไม
 
 SECURE=1 go run .   # ✅ SECURE — verify HMAC-SHA256(body, secret)
 ./exploit.sh        # ลายเซ็นไม่ถูก → 401 invalid signature
+
+WEBHOOK_SECRET=xxx SECURE=1 go run .   # secret มาจาก env (ไม่ hardcode)
+go test ./...       # ✅ test: ไม่มีลายเซ็น / ลายเซ็นผิด / body ถูกแก้ → ปฏิเสธ
 ```
 
 หรือดูเทียบทั้งสองโหมดในคำสั่งเดียว: `./demo.sh`
@@ -26,7 +29,8 @@ SECURE=1 go run .   # ✅ SECURE — verify HMAC-SHA256(body, secret)
 
 - ❌ อย่าเชื่อข้อมูล/โค้ดจากภายนอกโดยไม่ตรวจ integrity (webhook, อัปเดต, deserialization, artifact)
 - ✅ verify ลายเซ็น (HMAC / digital signature) ก่อนประมวลผลเสมอ — ใช้ `hmac.Equal` (constant-time)
-- ✅ ใช้ secret จาก env/secret manager ไม่ hardcode (demo นี้ hardcode เพื่อความง่าย)
+- ✅ ลายเซ็นผูกกับ body ทั้งก้อน → body ที่ถูกแก้ (เช่น เปลี่ยนยอดเงิน) จะ verify ไม่ผ่าน
+- ✅ secret อ่านจาก env (`WEBHOOK_SECRET`) ไม่ hardcode — demo มี default ให้รันได้ทันที
 
 ## 💬 vibe coding
 
