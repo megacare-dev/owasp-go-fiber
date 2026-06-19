@@ -14,8 +14,19 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// ในงานจริงคือ centralized log / SIEM — ที่นี่จำลองในหน่วยความจำ
+// auditLog จำลอง centralized log / SIEM — ในงานจริงส่งเข้า SIEM แล้วตั้ง alert
 var auditLog []string
+
+// recordFailedLogin บันทึกเหตุการณ์ login ล้มเหลว "เฉพาะโหมด secure"
+// เก็บ user + ip แต่ ❗ไม่รับ/ไม่เก็บรหัสผ่าน — คืน true ถ้าบันทึกจริง
+// โหมด vulnerable ❌ จะล้มเหลวเงียบๆ ไม่มีร่องรอย → ตรวจจับ brute-force ไม่ได้
+func recordFailedLogin(user, ip string, secure bool) bool {
+	if !secure {
+		return false
+	}
+	auditLog = append(auditLog, fmt.Sprintf("FAILED_LOGIN user=%s ip=%s", user, ip))
+	return true
+}
 
 func main() {
 	secure := os.Getenv("SECURE") == "1"
@@ -24,11 +35,7 @@ func main() {
 	app.Post("/login", func(c *fiber.Ctx) error {
 		user := c.Query("user", "admin")
 		// demo: สมมติรหัสผ่านผิดทุกครั้ง (จำลองการ brute-force)
-		if secure {
-			// ✅ บันทึกเหตุการณ์ login ล้มเหลว (ไม่เก็บรหัสผ่าน!) เพื่อให้ตรวจจับการโจมตีได้
-			auditLog = append(auditLog, fmt.Sprintf("FAILED_LOGIN user=%s ip=%s", user, c.IP()))
-		}
-		// ❌ VULNERABLE: ล้มเหลวเงียบๆ ไม่บันทึกอะไรเลย → มองไม่เห็นการโจมตี
+		recordFailedLogin(user, c.IP(), secure)
 		return c.Status(401).JSON(fiber.Map{"error": "invalid credentials"})
 	})
 
